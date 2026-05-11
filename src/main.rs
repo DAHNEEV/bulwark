@@ -5,10 +5,7 @@ use std::{
 
 use argon2::{
     Argon2,
-    password_hash::{
-        SaltString,
-        rand_core::{OsRng, RngCore},
-    },
+    password_hash::rand_core::{OsRng, RngCore},
 };
 use chacha20poly1305::{KeyInit, XChaCha20Poly1305, aead::stream};
 use clap::{Parser, Subcommand};
@@ -33,17 +30,19 @@ enum Commands {
     },
 }
 
-fn generate_salt() -> SaltString {
-    SaltString::generate(&mut OsRng)
+fn generate_salt() -> [u8; 16] {
+    let mut bytes = [0u8; 16];
+    OsRng.fill_bytes(&mut bytes);
+    bytes
 }
 
-fn hash_password(password: &str, salt: SaltString) -> Result<[u8; 32], anyhow::Error> {
+fn hash_password(password: &str, salt: [u8; 16]) -> Result<[u8; 32], anyhow::Error> {
     let argon2 = Argon2::default();
 
     let mut key = [0u8; 32];
 
     argon2
-        .hash_password_into(password.as_bytes(), &salt.as_str().as_bytes(), &mut key)
+        .hash_password_into(password.as_bytes(), &salt, &mut key)
         .map_err(|err| anyhow::anyhow!("Encrypting large file: {}", err))?;
 
     Ok(key)
@@ -55,22 +54,10 @@ fn generate_nonce() -> [u8; 19] {
     bytes
 }
 
-// maybe make it generics? todo!
-fn write_key_to_file(mut dist_file: &File, key: &[u8; 32]) -> Result<(), anyhow::Error> {
-    dist_file.write(key)?;
+fn write_to_file<T: AsRef<[u8]>>(mut dist_file: &File, text: T) -> Result<(), anyhow::Error> {
+    dist_file.write(text.as_ref())?;
     Ok(())
 }
-
-fn write_nonce_to_file(mut dist_file: &File, nonce: &[u8; 19]) -> Result<(), anyhow::Error> {
-    dist_file.write(nonce)?;
-    Ok(())
-}
-
-// thinking in progress
-// fn write_to_file<T: AsRef<[u8]>>(mut dist_file: &File, text: T) -> Result<(), anyhow::Error> {
-//     dist_file.write(text.as_ref())?;
-//     Ok(())
-// }
 
 fn stream_encrypt_to_file(
     mut source_file: File,
@@ -113,11 +100,11 @@ fn encrypt_file(
     let dist_file = File::create(dist_file_path)?;
 
     let salt = generate_salt();
+    write_to_file(&dist_file, &salt)?;
     let key = hash_password(&password, salt)?;
-    write_key_to_file(&dist_file, &key)?;
 
     let nonce = generate_nonce();
-    write_nonce_to_file(&dist_file, &nonce)?;
+    write_to_file(&dist_file, &nonce)?;
 
     stream_encrypt_to_file(source_file, dist_file, &key, &nonce)?;
 
