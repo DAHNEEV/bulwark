@@ -3,6 +3,7 @@ use std::{
     io::{Read, Write},
 };
 
+use anyhow::Context;
 use argon2::{
     Argon2,
     password_hash::rand_core::{OsRng, RngCore},
@@ -25,8 +26,9 @@ enum Commands {
         dist_file_path: String,
     },
     Decrypt {
-        #[arg(short, long)]
         password: String,
+        encrypted_file_path: String,
+        dist_file_path: String,
     },
 }
 
@@ -54,11 +56,6 @@ fn generate_nonce() -> [u8; 19] {
     bytes
 }
 
-fn write_to_file<T: AsRef<[u8]>>(mut dist_file: &File, text: T) -> Result<(), anyhow::Error> {
-    dist_file.write(text.as_ref())?;
-    Ok(())
-}
-
 fn stream_encrypt_to_file(
     mut source_file: File,
     mut dist_file: File,
@@ -72,18 +69,24 @@ fn stream_encrypt_to_file(
     let mut buffer = [0u8; BUFFER_LEN];
 
     loop {
-        let read_count = source_file.read(&mut buffer)?;
+        let read_count = source_file
+            .read(&mut buffer)
+            .context("Failed to read source file")?;
 
         if read_count == BUFFER_LEN {
             let ciphertext = stream_encryptor
                 .encrypt_next(buffer.as_slice())
                 .map_err(|err| anyhow::anyhow!("Encrypting large file: {}", err))?;
-            dist_file.write(&ciphertext)?;
+            dist_file
+                .write_all(&ciphertext)
+                .context("Failed to write encrypted chunk to dist file")?;
         } else {
             let ciphertext = stream_encryptor
                 .encrypt_last(&buffer[..read_count])
                 .map_err(|err| anyhow::anyhow!("Encrypting large file: {}", err))?;
-            dist_file.write(&ciphertext)?;
+            dist_file
+                .write_all(&ciphertext)
+                .context("Failed to write FINAL encrypted chunk to dist file")?;
             break;
         }
     }
@@ -96,17 +99,86 @@ fn encrypt_file(
     dist_file_path: String,
     password: String,
 ) -> Result<(), anyhow::Error> {
-    let source_file = File::open(source_file_path)?;
-    let dist_file = File::create(dist_file_path)?;
+    let source_file = File::open(source_file_path).context("Failed to open source file")?;
+    let mut dist_file = File::create(dist_file_path).context("Failed to create dist file")?;
 
     let salt = generate_salt();
-    write_to_file(&dist_file, &salt)?;
+    dist_file
+        .write_all(&salt)
+        .context("Failed to write salt to dist file")?;
     let key = hash_password(&password, salt)?;
 
     let nonce = generate_nonce();
-    write_to_file(&dist_file, &nonce)?;
+    dist_file
+        .write_all(&nonce)
+        .context("Failed to write nonce to dist file")?;
 
     stream_encrypt_to_file(source_file, dist_file, &key, &nonce)?;
+
+    Ok(())
+}
+
+fn stream_decrypt_to_file(
+    mut encrypted_file: File,
+    mut dist_file: File,
+    key: &[u8; 32],
+    nonce: &[u8; 19],
+) -> Result<(), anyhow::Error> {
+    let aead = XChaCha20Poly1305::new(key.as_ref().into());
+    let mut stream_decryptor = stream::DecryptorBE32::from_aead(aead, nonce.as_ref().into());
+
+    const BUFFER_LEN: usize = 500 + 16;
+    let mut buffer = [0u8; BUFFER_LEN];
+
+    loop {
+        let read_count = encrypted_file
+            .read(&mut buffer)
+            .context("Failed to read encrypted file content")?;
+
+        if read_count == BUFFER_LEN {
+            let plaintext = stream_decryptor
+                .decrypt_next(buffer.as_slice())
+                .map_err(|err| anyhow::anyhow!("Decrypting large file: {}", err))?;
+            dist_file
+                .write_all(&plaintext)
+                .context("Failed to write plain chunk to dist file")?;
+        } else if read_count == 0 {
+            break;
+        } else {
+            let plaintext = stream_decryptor
+                .decrypt_last(&buffer[..read_count])
+                .map_err(|err| anyhow::anyhow!("Decrypting large file: {}", err))?;
+            dist_file
+                .write_all(&plaintext)
+                .context("Failed to write FINAL plain chunk to dist file")?;
+            break;
+        }
+    }
+
+    Ok(())
+}
+
+fn decrypt_file(
+    encrypted_file_path: String,
+    dist_file_path: String,
+    password: String,
+) -> Result<(), anyhow::Error> {
+    let mut encrypted_file =
+        File::open(encrypted_file_path).context("Failed to open encrypted file")?;
+    let dist_file = File::create(dist_file_path).context("Failed to create dist file")?;
+
+    let mut salt = [0u8; 16];
+    encrypted_file
+        .read_exact(&mut salt)
+        .context("Failed to read salt")?;
+    let key = hash_password(&password, salt)?;
+
+    let mut nonce = [0u8; 19];
+    encrypted_file
+        .read_exact(&mut nonce)
+        .context("Failed to read nonce")?;
+
+    stream_decrypt_to_file(encrypted_file, dist_file, &key, &nonce)?;
 
     Ok(())
 }
@@ -120,6 +192,10 @@ fn main() {
             source_file_path,
             dist_file_path,
         } => encrypt_file(source_file_path, dist_file_path, password).unwrap(),
-        Commands::Decrypt { .. } => {}
+        Commands::Decrypt {
+            password,
+            encrypted_file_path,
+            dist_file_path,
+        } => decrypt_file(encrypted_file_path, dist_file_path, password).unwrap(),
     }
 }
