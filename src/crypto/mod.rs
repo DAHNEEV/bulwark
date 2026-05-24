@@ -1,12 +1,10 @@
 use std::{
     fs::File,
-    io::{BufWriter, Write},
+    io::{BufReader, BufWriter, Read, Write},
     path::PathBuf,
 };
 
-use flate2::{Compression, write::ZlibEncoder};
-use tar::Builder;
-
+mod decryptor;
 mod encryptor;
 mod utils;
 
@@ -22,8 +20,8 @@ pub struct EncryptArgs {
     pub password: String,
 }
 
-pub fn encrypt(opts: EncryptArgs) -> Result<(), anyhow::Error> {
-    let output_file = File::create(opts.output_path)?;
+pub fn encrypt(args: EncryptArgs) -> Result<(), anyhow::Error> {
+    let output_file = File::create(args.output_path)?;
     let mut buffered_output = BufWriter::with_capacity(1024 * 1024, output_file);
 
     let salt = utils::generate_random_bytes::<16>()?;
@@ -32,13 +30,13 @@ pub fn encrypt(opts: EncryptArgs) -> Result<(), anyhow::Error> {
     buffered_output.write_all(&salt)?;
     buffered_output.write_all(&nonce)?;
 
-    let key = utils::hash_password(&opts.password, salt)?;
+    let key = utils::hash_password(&args.password, salt)?;
 
     let encryptor = encryptor::Encryptor::new(buffered_output, &key, &nonce);
-    let compressor = ZlibEncoder::new(encryptor, Compression::fast());
-    let mut archiver = Builder::new(compressor);
+    let compressor = zstd::Encoder::new(encryptor, 9)?;
+    let mut archiver = tar::Builder::new(compressor);
 
-    for path in &opts.input_paths {
+    for path in &args.input_paths {
         archiver.append_path(path)?;
     }
 
@@ -49,9 +47,28 @@ pub fn encrypt(opts: EncryptArgs) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-// todo!
-// pub struct DecryptArgs {
-//     pub input_path: PathBuf,
-//     pub output_path: PathBuf,
-//     pub password: String,
-// }
+pub struct DecryptArgs {
+    pub input_path: PathBuf,
+    pub output_path: PathBuf,
+    pub password: String,
+}
+
+pub fn decrypt(args: DecryptArgs) -> Result<(), anyhow::Error> {
+    let input_file = File::open(args.input_path)?;
+    let mut buffered_input = BufReader::with_capacity(1024 * 1024, input_file);
+
+    let mut salt = [0u8; 16];
+    buffered_input.read_exact(&mut salt)?;
+    let mut nonce = [0u8; 19];
+    buffered_input.read_exact(&mut nonce)?;
+
+    let key = utils::hash_password(&args.password, salt)?;
+
+    let decryptor = decryptor::Decryptor::new(buffered_input, &key, &nonce);
+    let decompressor = zstd::Decoder::new(decryptor)?;
+    let mut dearchiver = tar::Archive::new(decompressor);
+
+    dearchiver.unpack(args.output_path)?;
+
+    Ok(())
+}

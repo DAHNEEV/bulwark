@@ -14,6 +14,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Encrypt(CliEncryptArgs),
+    Decrypt(CliDecryptArgs),
 }
 
 #[derive(Args)]
@@ -23,6 +24,18 @@ struct CliEncryptArgs {
 
     #[arg(short, long, required = true, num_args = 1..)]
     input_paths: Vec<PathBuf>,
+
+    #[arg(short, long)]
+    output_path: PathBuf,
+}
+
+#[derive(Args)]
+struct CliDecryptArgs {
+    #[arg(short, long)]
+    password: String,
+
+    #[arg(short, long)]
+    input_path: PathBuf,
 
     #[arg(short, long)]
     output_path: PathBuf,
@@ -40,6 +53,16 @@ fn main() {
             };
             let t0 = Instant::now();
             crypto::encrypt(options).unwrap();
+            println!("Time: {:?}", t0.elapsed());
+        }
+        Commands::Decrypt(args) => {
+            let options = crypto::DecryptArgs {
+                input_path: args.input_path,
+                output_path: args.output_path,
+                password: args.password,
+            };
+            let t0 = Instant::now();
+            crypto::decrypt(options).unwrap();
             println!("Time: {:?}", t0.elapsed());
         }
     }
