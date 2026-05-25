@@ -1,3 +1,9 @@
+use std::{
+    fs::{self, File},
+    io,
+    path::PathBuf,
+};
+
 use argon2::Argon2;
 use rand::{TryRng, rngs::SysRng};
 
@@ -17,4 +23,47 @@ pub fn hash_password(password: &str, salt: [u8; 16]) -> Result<[u8; 32], anyhow:
         .map_err(|err| anyhow::anyhow!("Encrypting large file: {}", err))?;
 
     Ok(key)
+}
+
+pub struct TempFile {
+    file_path: PathBuf,
+    temp_file_path: PathBuf,
+    persisted: bool,
+}
+
+impl TempFile {
+    pub fn create(path: PathBuf) -> io::Result<(Self, File)> {
+        let random_bytes = generate_random_bytes::<4>()
+            .map_err(|_| io::Error::new(io::ErrorKind::Other, "Error generating random bytes"))?;
+        let random_num = u32::from_ne_bytes(random_bytes);
+
+        let temp_file_path = path
+            .with_added_extension(format!("{:x}", random_num))
+            .with_added_extension("temp");
+
+        let file = File::create(temp_file_path.clone())?;
+
+        let temp_file = Self {
+            file_path: path,
+            temp_file_path,
+            persisted: false,
+        };
+
+        Ok((temp_file, file))
+    }
+
+    pub fn commit(mut self) -> io::Result<()> {
+        fs::rename(&self.temp_file_path, &self.file_path)?;
+        self.persisted = true;
+
+        Ok(())
+    }
+}
+
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        if !self.persisted {
+            let _ = fs::remove_file(&self.temp_file_path);
+        }
+    }
 }

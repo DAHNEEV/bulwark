@@ -21,8 +21,9 @@ pub struct EncryptArgs {
 }
 
 pub fn encrypt(args: EncryptArgs) -> Result<(), anyhow::Error> {
-    let output_file = File::create(args.output_path)?;
-    let mut buffered_output = BufWriter::with_capacity(1024 * 1024, output_file);
+    let (temp_guard, temp_file) = utils::TempFile::create(args.output_path)?;
+
+    let mut buffered_output = BufWriter::with_capacity(1024 * 1024, temp_file);
 
     let salt = utils::generate_random_bytes::<16>()?;
     let nonce = utils::generate_random_bytes::<19>()?;
@@ -43,6 +44,8 @@ pub fn encrypt(args: EncryptArgs) -> Result<(), anyhow::Error> {
     let compressor = archiver.into_inner()?;
     let encryptor = compressor.finish()?;
     encryptor.finish()?;
+
+    temp_guard.commit()?;
 
     Ok(())
 }
