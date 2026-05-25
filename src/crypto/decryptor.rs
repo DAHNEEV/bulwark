@@ -45,45 +45,45 @@ impl<T: Read> Decryptor<T> {
 
 impl<T: Read> Read for Decryptor<T> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if self.next_chunk.is_none() {
-            self.next_chunk = Some(Self::read_full_chunk(&mut self.inner)?);
+        loop {
+            if self.next_chunk.is_none() {
+                self.next_chunk = Some(Self::read_full_chunk(&mut self.inner)?);
+            }
+
+            let bytes_read = self.buffer.read(buf)?;
+            if bytes_read > 0 {
+                return Ok(bytes_read);
+            }
+
+            if self.is_eof {
+                return Ok(0);
+            }
+
+            let following_chunk = Self::read_full_chunk(&mut self.inner)?;
+
+            let current_chunk = self.next_chunk.take().expect("next_chunk missing");
+
+            let plaintext = if following_chunk.is_empty() {
+                self.is_eof = true;
+                self.stream_decryptor
+                    .take()
+                    .expect("Decryptor already consumed")
+                    .decrypt_last(current_chunk.as_slice())
+                    .map_err(|_| {
+                        io::Error::new(io::ErrorKind::InvalidData, "Error decrypting last buffer")
+                    })?
+            } else {
+                self.stream_decryptor
+                    .as_mut()
+                    .expect("Missing decryptor")
+                    .decrypt_next(current_chunk.as_slice())
+                    .map_err(|_| {
+                        io::Error::new(io::ErrorKind::InvalidData, "Error decrypting buffer")
+                    })?
+            };
+
+            self.buffer = Cursor::new(plaintext);
+            self.next_chunk = Some(following_chunk);
         }
-
-        let bytes_read = self.buffer.read(buf)?;
-        if bytes_read > 0 {
-            return Ok(bytes_read);
-        }
-
-        if self.is_eof {
-            return Ok(0);
-        }
-
-        let following_chunk = Self::read_full_chunk(&mut self.inner)?;
-
-        let current_chunk = self.next_chunk.take().expect("next_chunk missing");
-
-        let plaintext = if following_chunk.is_empty() {
-            self.is_eof = true;
-            self.stream_decryptor
-                .take()
-                .expect("Decryptor already consumed")
-                .decrypt_last(current_chunk.as_slice())
-                .map_err(|_| {
-                    io::Error::new(io::ErrorKind::InvalidData, "Error decrypting last buffer")
-                })?
-        } else {
-            self.stream_decryptor
-                .as_mut()
-                .expect("Missing decryptor")
-                .decrypt_next(current_chunk.as_slice())
-                .map_err(|_| {
-                    io::Error::new(io::ErrorKind::InvalidData, "Error decrypting buffer")
-                })?
-        };
-
-        self.buffer = Cursor::new(plaintext);
-        self.next_chunk = Some(following_chunk);
-
-        self.read(buf)
     }
 }
