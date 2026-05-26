@@ -33,7 +33,7 @@ pub struct TempFile {
 
 impl TempFile {
     pub fn create(path: PathBuf) -> io::Result<(Self, File)> {
-        let random_bytes = generate_random_bytes::<4>()
+        let random_bytes: [u8; 4] = generate_random_bytes()
             .map_err(|_| io::Error::new(io::ErrorKind::Other, "Error generating random bytes"))?;
         let random_num = u32::from_ne_bytes(random_bytes);
 

@@ -25,8 +25,8 @@ pub fn encrypt(args: EncryptArgs) -> Result<(), anyhow::Error> {
 
     let mut buffered_output = BufWriter::with_capacity(1024 * 1024, temp_file);
 
-    let salt = utils::generate_random_bytes::<16>()?;
-    let nonce = utils::generate_random_bytes::<19>()?;
+    let salt: [u8; 16] = utils::generate_random_bytes()?;
+    let nonce: [u8; 19] = utils::generate_random_bytes()?;
 
     buffered_output.write_all(&salt)?;
     buffered_output.write_all(&nonce)?;
