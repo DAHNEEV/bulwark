@@ -67,3 +67,44 @@ impl Drop for TempFile {
         }
     }
 }
+
+pub struct TempDir {
+    dir_path: PathBuf,
+    pub temp_dir_path: PathBuf,
+    persisted: bool,
+}
+
+impl TempDir {
+    pub fn create(path: PathBuf) -> io::Result<Self> {
+        let random_bytes: [u8; 4] = generate_random_bytes()
+            .map_err(|_| io::Error::new(io::ErrorKind::Other, "Error generating random bytes"))?;
+        let random_num = u32::from_ne_bytes(random_bytes);
+
+        let dir_path = path.with_added_extension(format!("{:x}", random_num));
+
+        let temp_dir_path = dir_path.with_added_extension("temp");
+
+        let temp_dir = Self {
+            dir_path,
+            temp_dir_path,
+            persisted: false,
+        };
+
+        Ok(temp_dir)
+    }
+
+    pub fn commit(mut self) -> io::Result<()> {
+        fs::rename(&self.temp_dir_path, &self.dir_path)?;
+        self.persisted = true;
+
+        Ok(())
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        if !self.persisted {
+            let _ = fs::remove_dir_all(&self.temp_dir_path);
+        }
+    }
+}
