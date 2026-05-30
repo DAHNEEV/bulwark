@@ -80,12 +80,12 @@ impl TempDir {
             .map_err(|_| io::Error::new(io::ErrorKind::Other, "Error generating random bytes"))?;
         let random_num = u32::from_ne_bytes(random_bytes);
 
-        let dir_path = path.with_added_extension(format!("{:x}", random_num));
-
-        let temp_dir_path = dir_path.with_added_extension("temp");
+        let temp_dir_path = path
+            .with_added_extension(format!("{:x}", random_num))
+            .with_added_extension("temp");
 
         let temp_dir = Self {
-            dir_path,
+            dir_path: path,
             temp_dir_path,
             persisted: false,
         };
