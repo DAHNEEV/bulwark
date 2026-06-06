@@ -4,8 +4,11 @@ use std::{
     path::PathBuf,
 };
 
+use chacha20poly1305::{KeyInit, XChaCha20Poly1305};
+
 mod decryptor;
 mod encryptor;
+mod nonce;
 mod utils;
 
 // todo!
@@ -43,10 +46,12 @@ pub fn encrypt(args: EncryptArgs) -> Result<(), anyhow::Error> {
     buffered_output.write_all(&nonce)?;
 
     let key = utils::hash_password(&args.password, salt)?;
+    let aead = XChaCha20Poly1305::new(&key.into());
+    let nonce_generator = nonce::NonceXChaCha20Poly1305 { base_nonce: nonce };
 
-    let encryptor = encryptor::Encryptor::new(buffered_output, &key, &nonce);
-    let encoder = zstd::Encoder::new(encryptor, 9)?;
-    // todo! encoder.multithread(...)?;
+    let encryptor = encryptor::Encryptor::new(buffered_output, aead, nonce_generator);
+    let mut encoder = zstd::Encoder::new(encryptor, 4)?;
+    encoder.multithread(3)?;
     let mut archiver = tar::Builder::new(encoder);
 
     for path in &args.input_paths {

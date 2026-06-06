@@ -9,6 +9,7 @@ argon2 = "0.5.3"
 chacha20poly1305 = { version = "0.10.1", features = ["stream"] }
 clap = { version = "4.6.1", features = ["derive"] }
 rand = "0.10.1"
+rayon = "1.12.0"
 tar = "0.4.46"
 zeroize = "1.8.2"
 zstd = { version = "0.13.3", features = ["zstdmt"] }
