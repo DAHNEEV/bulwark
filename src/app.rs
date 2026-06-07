@@ -1,16 +1,16 @@
+use crate::crypto;
 use eframe::egui;
 use rfd::FileDialog;
 use std::path::PathBuf;
-use crate::crypto;
 
 #[derive(Default, PartialEq, Debug)]
-enum Mode{
+enum Mode {
     #[default]
     Encrypt,
     Decrypt,
 }
 #[derive(Default)]
-enum State{
+enum State {
     Success,
     Error(String),
     #[default]
@@ -26,36 +26,45 @@ pub struct CryptoApp {
     hide_password: bool,
 }
 
-impl Default for CryptoApp{
+impl Default for CryptoApp {
     fn default() -> Self {
-        Self { mode: (Mode::default()), password: (String::new()), src_filepath: (None), dist_filepath: (None), status: (State::default()), hide_password: true }
+        Self {
+            mode: (Mode::default()),
+            password: (String::new()),
+            src_filepath: (None),
+            dist_filepath: (None),
+            status: (State::default()),
+            hide_password: true,
+        }
     }
 }
 
-impl eframe::App for CryptoApp{
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame){
-        egui::TopBottomPanel::top("mode_swicher").show(ctx, |ui|{
-            ui.horizontal(|ui|{
+impl eframe::App for CryptoApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        egui::TopBottomPanel::top("mode_swicher").show(ctx, |ui| {
+            ui.horizontal(|ui| {
                 ui.label("Mode:");
                 ui.selectable_value(&mut self.mode, Mode::Decrypt, "Decrypt");
                 ui.selectable_value(&mut self.mode, Mode::Encrypt, "Encrypt")
             });
         });
-        egui::CentralPanel::default().show(ctx, |ui|{
+        egui::CentralPanel::default().show(ctx, |ui| {
             ui.separator();
-            ui.vertical(|ui|{
-                ui.horizontal(|ui|{
+            ui.vertical(|ui| {
+                ui.horizontal(|ui| {
                     //Password
                     ui.label("Password:");
-                    ui.add(egui::TextEdit::singleline(&mut self.password).password(self.hide_password));
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.password).password(self.hide_password),
+                    );
                     ui.checkbox(&mut self.hide_password, String::new());
                     ui.separator();
                 });
-                ui.horizontal(|ui|{
+                ui.horizontal(|ui| {
                     //Src File
-                    if ui.button("Load source file").clicked(){
+                    if ui.button("Load source file").clicked() {
                         let path = FileDialog::new().pick_file();
-                        if let Some(path) = path{
+                        if let Some(path) = path {
                             self.src_filepath = Some(path);
                         }
                     }
@@ -65,11 +74,11 @@ impl eframe::App for CryptoApp{
                         ui.label("No path selected");
                     }
                 });
-                ui.horizontal(|ui|{
+                ui.horizontal(|ui| {
                     //Dist File
-                    if ui.button("Load dist file").clicked(){
+                    if ui.button("Load dist file").clicked() {
                         let path = FileDialog::new().pick_file();
-                        if let Some(path) = path{
+                        if let Some(path) = path {
                             self.dist_filepath = Some(path)
                         }
                     }
@@ -85,30 +94,47 @@ impl eframe::App for CryptoApp{
                     }
                 });
 
-                let button_text = if self.mode == Mode::Decrypt{"Decrypt file"} else {"Encrypt file"};
-                if ui.button(button_text).clicked(){
-                    if let (Some(source_file_path), Some(dist_file_path)) = (&self.src_filepath, &self.dist_filepath) {
+                let button_text = if self.mode == Mode::Decrypt {
+                    "Decrypt file"
+                } else {
+                    "Encrypt file"
+                };
+                if ui.button(button_text).clicked() {
+                    if let (Some(source_file_path), Some(dist_file_path)) =
+                        (&self.src_filepath, &self.dist_filepath)
+                    {
                         let src_str = source_file_path.to_string_lossy().into_owned();
                         let dist_str = dist_file_path.to_string_lossy().into_owned();
-                        if !self.password.is_empty(){
-                             match self.mode {
+                        if !self.password.is_empty() {
+                            match self.mode {
                                 Mode::Decrypt => {
-                                    match crypto::decrypt_file(src_str, dist_str, self.password.clone()){
-                                        Ok(()) => {self.status = State::Success}
-                                        Err(e) => {self.status = State::Error(e.to_string())}
+                                    let args = crypto::DecryptArgs {
+                                        input_path: PathBuf::from(src_str),
+                                        output_path: PathBuf::from(dist_str),
+                                        password: self.password.clone(),
+                                    };
+
+                                    match crypto::decrypt(args) {
+                                        Ok(()) => self.status = State::Success,
+                                        Err(e) => self.status = State::Error(e.to_string()),
                                     }
                                 }
                                 Mode::Encrypt => {
-                                    match crypto::encrypt_file(src_str, dist_str, self.password.clone()){
-                                        Ok(()) => {self.status = State::Success}
-                                        Err(e) => {self.status = State::Error(e.to_string())}
+                                    let args = crypto::EncryptArgs {
+                                        input_paths: Vec::from([PathBuf::from(src_str)]),
+                                        output_path: PathBuf::from(dist_str),
+                                        password: self.password.clone(),
+                                    };
+
+                                    match crypto::encrypt(args) {
+                                        Ok(()) => self.status = State::Success,
+                                        Err(e) => self.status = State::Error(e.to_string()),
                                     }
                                 }
                             }
                         }
                     }
                 }
-
 
                 match &self.status {
                     State::Idle => {
