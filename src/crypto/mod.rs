@@ -1,7 +1,7 @@
 use std::{
     fs::File,
     io::{BufReader, BufWriter, Read, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use aes_gcm::Aes256Gcm;
@@ -56,7 +56,11 @@ pub fn encrypt(args: EncryptArgs) -> Result<(), anyhow::Error> {
     let mut archiver = tar::Builder::new(encoder);
 
     for path in &args.input_paths {
-        archiver.append_path(path)?;
+        let path = Path::new(path);
+
+        if let Some(file_name) = path.file_name() {
+            archiver.append_path_with_name(path, file_name)?;
+        }
     }
 
     let encoder = archiver.into_inner()?;
