@@ -1,36 +1,60 @@
-use std::io::{self, Write};
+use std::{
+    io::{self, Write},
+    ops::Sub,
+};
 
-use chacha20poly1305::{KeyInit, XChaCha20Poly1305, aead::stream};
+use chacha20poly1305::{
+    aead::{
+        Aead,
+        generic_array::{ArrayLength, GenericArray},
+    },
+    consts::U5,
+};
 
-const CHUNK_SIZE: usize = 1024 * 1024; // 1 MB
+use crate::crypto::parallel_stream;
 
-pub struct Encryptor<T: Write> {
-    inner: T,
-    stream_encryptor: stream::EncryptorBE32<XChaCha20Poly1305>,
+pub struct Encryptor<W, A>
+where
+    W: Write,
+    A: Aead + Sync,
+    A::NonceSize: Sub<U5>,
+    <A::NonceSize as Sub<U5>>::Output: ArrayLength<u8>,
+{
+    inner: W,
+    parallel_stream: parallel_stream::EncryptorBE32<A>,
     buffer: Vec<u8>,
+    buffer_size: usize,
 }
 
-impl<T: Write> Encryptor<T> {
-    pub fn new(inner: T, key: &[u8; 32], nonce: &[u8; 19]) -> Self {
-        let aead = XChaCha20Poly1305::new(key.as_ref().into());
-        let stream_encryptor = stream::EncryptorBE32::from_aead(aead, nonce.as_ref().into());
-
+impl<W, A> Encryptor<W, A>
+where
+    W: Write,
+    A: Aead + Sync,
+    A::NonceSize: Sub<U5>,
+    <A::NonceSize as Sub<U5>>::Output: ArrayLength<u8>,
+{
+    pub fn new(
+        inner: W,
+        aead: A,
+        nonce: GenericArray<u8, <A::NonceSize as Sub<U5>>::Output>,
+        chunk_size: usize,
+        threads: usize,
+    ) -> Self {
+        let buffer_size = chunk_size * threads;
         Self {
             inner,
-            stream_encryptor,
-            buffer: Vec::with_capacity(CHUNK_SIZE),
+            parallel_stream: parallel_stream::EncryptorBE32::from_aead(aead, nonce, chunk_size),
+            buffer: Vec::with_capacity(buffer_size),
+            buffer_size,
         }
     }
 
-    pub fn finish(mut self) -> io::Result<T> {
-        let ciphertext = self
-            .stream_encryptor
-            .encrypt_last(self.buffer.as_slice())
-            .map_err(|_| {
-                io::Error::new(io::ErrorKind::InvalidData, "Error encrypting last buffer")
-            })?;
+    pub fn finish(mut self) -> io::Result<W> {
+        let ciphertext = self.parallel_stream.encrypt_last(self.buffer.as_slice())?;
 
         self.inner.write_all(&ciphertext)?;
+
+        self.buffer.clear();
 
         self.inner.flush()?;
 
@@ -38,32 +62,40 @@ impl<T: Write> Encryptor<T> {
     }
 }
 
-impl<T: Write> Write for Encryptor<T> {
+impl<W, A> Write for Encryptor<W, A>
+where
+    W: Write,
+    A: Aead + Sync,
+    A::NonceSize: Sub<U5>,
+    <A::NonceSize as Sub<U5>>::Output: ArrayLength<u8>,
+{
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let input_len = buf.len();
-        let space_left = CHUNK_SIZE - self.buffer.len();
-
-        let to_write = std::cmp::min(input_len, space_left);
-
-        self.buffer.extend_from_slice(&buf[..to_write]);
-
-        if CHUNK_SIZE == self.buffer.len() {
-            let ciphertext = self
-                .stream_encryptor
-                .encrypt_next(self.buffer.as_slice())
-                .map_err(|_| {
-                    io::Error::new(io::ErrorKind::InvalidData, "Error encrypting buffer")
-                })?;
-
-            self.inner.write_all(&ciphertext)?;
-
-            self.buffer.clear();
+        // if there is not enough data to perform the encryption, just save them
+        if self.buffer.len() + buf.len() < self.buffer_size {
+            self.buffer.extend_from_slice(buf);
+            return Ok(buf.len());
         }
 
-        Ok(to_write)
+        // otherwise, read as much data as needed to fill the buffer
+        let space_left = self.buffer_size - self.buffer.len();
+        self.buffer.extend_from_slice(&buf[..space_left]);
+
+        let ciphertext = self.parallel_stream.encrypt_next(self.buffer.as_slice())?;
+
+        self.inner.write_all(&ciphertext)?;
+
+        self.buffer.clear();
+
+        Ok(space_left)
     }
 
     fn flush(&mut self) -> io::Result<()> {
+        let ciphertext = self.parallel_stream.encrypt_next(self.buffer.as_slice())?;
+
+        self.inner.write_all(&ciphertext)?;
+
+        self.buffer.clear();
+
         self.inner.flush()
     }
 }

@@ -4,8 +4,12 @@ use std::{
     path::PathBuf,
 };
 
+use aes_gcm::Aes256Gcm;
+use chacha20poly1305::{KeyInit, XChaCha20Poly1305};
+
 mod decryptor;
 mod encryptor;
+mod parallel_stream;
 mod utils;
 
 // todo!
@@ -37,16 +41,18 @@ pub fn encrypt(args: EncryptArgs) -> Result<(), anyhow::Error> {
     let mut buffered_output = BufWriter::with_capacity(1024 * 1024, temp_file);
 
     let salt: [u8; 16] = utils::generate_random_bytes()?;
-    let nonce: [u8; 19] = utils::generate_random_bytes()?;
+    let nonce = utils::generate_random_bytes()?;
 
     buffered_output.write_all(&salt)?;
     buffered_output.write_all(&nonce)?;
 
     let key = utils::hash_password(&args.password, salt)?;
+    let aead = XChaCha20Poly1305::new(&key.into());
+    // let aead = Aes256Gcm::new(&key.into());
 
-    let encryptor = encryptor::Encryptor::new(buffered_output, &key, &nonce);
-    let encoder = zstd::Encoder::new(encryptor, 9)?;
-    // todo! encoder.multithread(...)?;
+    let encryptor = encryptor::Encryptor::new(buffered_output, aead, nonce.into(), 1024 * 1024, 4);
+    let mut encoder = zstd::Encoder::new(encryptor, 4)?;
+    encoder.multithread(3)?;
     let mut archiver = tar::Builder::new(encoder);
 
     for path in &args.input_paths {
@@ -89,8 +95,10 @@ pub fn decrypt(args: DecryptArgs) -> Result<(), anyhow::Error> {
     buffered_input.read_exact(&mut nonce)?;
 
     let key = utils::hash_password(&args.password, salt)?;
+    let aead = XChaCha20Poly1305::new(&key.into());
 
-    let decryptor = decryptor::Decryptor::new(buffered_input, &key, &nonce);
+    let decryptor =
+        decryptor::Decryptor::new(buffered_input, aead, nonce.into(), 1024 * 1024 + 16, 4);
     let decoder = zstd::Decoder::new(decryptor)?;
     let mut dearchiver = tar::Archive::new(decoder);
 
