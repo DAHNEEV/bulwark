@@ -1,7 +1,8 @@
-use crate::crypto;
 use eframe::egui;
 use rfd::FileDialog;
 use std::path::PathBuf;
+
+use crate::crypto;
 
 #[derive(Default, PartialEq, Debug)]
 enum Mode {
@@ -20,8 +21,8 @@ enum State {
 pub struct CryptoApp {
     mode: Mode,
     password: String,
-    src_filepath: Option<PathBuf>,
-    dist_filepath: Option<PathBuf>,
+    input_paths: Option<Vec<PathBuf>>,
+    output_path: Option<PathBuf>,
     status: State,
     hide_password: bool,
 }
@@ -29,11 +30,11 @@ pub struct CryptoApp {
 impl Default for CryptoApp {
     fn default() -> Self {
         Self {
-            mode: (Mode::default()),
-            password: (String::new()),
-            src_filepath: (None),
-            dist_filepath: (None),
-            status: (State::default()),
+            mode: Mode::default(),
+            password: String::new(),
+            input_paths: None,
+            output_path: None,
+            status: State::default(),
             hide_password: true,
         }
     }
@@ -49,7 +50,6 @@ impl eframe::App for CryptoApp {
             });
         });
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.separator();
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
                     //Password
@@ -58,36 +58,35 @@ impl eframe::App for CryptoApp {
                         egui::TextEdit::singleline(&mut self.password).password(self.hide_password),
                     );
                     ui.checkbox(&mut self.hide_password, String::new());
-                    ui.separator();
                 });
                 ui.horizontal(|ui| {
                     //Src File
                     if ui.button("Load source file").clicked() {
-                        let path = FileDialog::new().pick_file();
-                        if let Some(path) = path {
-                            self.src_filepath = Some(path);
+                        let paths = FileDialog::new().pick_files();
+                        if let Some(paths) = paths {
+                            self.input_paths = Some(paths);
                         }
                     }
-                    if let Some(path) = &self.src_filepath {
-                        ui.label(path.to_string_lossy());
+                    if let Some(paths) = &self.input_paths {
+                        ui.label(
+                            paths
+                                .iter()
+                                .map(|path| path.to_string_lossy())
+                                .collect::<Vec<_>>()
+                                .join(";"),
+                        );
                     } else {
                         ui.label("No path selected");
                     }
                 });
                 ui.horizontal(|ui| {
                     //Dist File
-                    if ui.button("Load dist file").clicked() {
-                        let path = FileDialog::new().pick_file();
-                        if let Some(path) = path {
-                            self.dist_filepath = Some(path)
-                        }
-                    }
                     if ui.button("Create new dist file").clicked() {
                         if let Some(path) = FileDialog::new().save_file() {
-                            self.dist_filepath = Some(path);
+                            self.output_path = Some(path);
                         }
                     }
-                    if let Some(path) = &self.dist_filepath {
+                    if let Some(path) = &self.output_path {
                         ui.label(path.to_string_lossy());
                     } else {
                         ui.label("No path selected");
@@ -100,29 +99,15 @@ impl eframe::App for CryptoApp {
                     "Encrypt file"
                 };
                 if ui.button(button_text).clicked() {
-                    if let (Some(source_file_path), Some(dist_file_path)) =
-                        (&self.src_filepath, &self.dist_filepath)
+                    if let (Some(input_paths), Some(output_path)) =
+                        (&self.input_paths, &self.output_path)
                     {
-                        let src_str = source_file_path.to_string_lossy().into_owned();
-                        let dist_str = dist_file_path.to_string_lossy().into_owned();
                         if !self.password.is_empty() {
                             match self.mode {
-                                Mode::Decrypt => {
-                                    let args = crypto::DecryptArgs {
-                                        input_path: PathBuf::from(src_str),
-                                        output_path: PathBuf::from(dist_str),
-                                        password: self.password.clone(),
-                                    };
-
-                                    match crypto::decrypt(args) {
-                                        Ok(()) => self.status = State::Success,
-                                        Err(e) => self.status = State::Error(e.to_string()),
-                                    }
-                                }
                                 Mode::Encrypt => {
                                     let args = crypto::EncryptArgs {
-                                        input_paths: Vec::from([PathBuf::from(src_str)]),
-                                        output_path: PathBuf::from(dist_str),
+                                        input_paths: input_paths.clone(),
+                                        output_path: output_path.clone(),
                                         password: self.password.clone(),
                                     };
 
@@ -131,6 +116,7 @@ impl eframe::App for CryptoApp {
                                         Err(e) => self.status = State::Error(e.to_string()),
                                     }
                                 }
+                                _ => {}
                             }
                         }
                     }
