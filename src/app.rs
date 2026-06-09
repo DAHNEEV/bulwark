@@ -14,6 +14,7 @@ enum Mode {
 enum State {
     Success,
     Error(String),
+    Process(String),
     #[default]
     Idle,
 }
@@ -62,10 +63,18 @@ impl eframe::App for CryptoApp {
                 ui.horizontal(|ui| {
                     //Src File
                     if ui.button("Load source file").clicked() {
-                        let paths = FileDialog::new().pick_files();
-                        if let Some(paths) = paths {
-                            self.input_paths = Some(paths);
+                        if self.mode == Mode::Encrypt{
+                            let paths = FileDialog::new().pick_files();
+                            if let Some(paths) = paths {
+                                self.input_paths = Some(paths);
+                            }
+                        } else {
+                            let path = FileDialog::new().pick_file();
+                            if let Some(path) = path {
+                                self.input_paths = Some(vec![path]);
+                            }
                         }
+                        
                     }
                     if let Some(paths) = &self.input_paths {
                         ui.label(
@@ -110,13 +119,32 @@ impl eframe::App for CryptoApp {
                                         output_path: output_path.clone(),
                                         password: self.password.clone(),
                                     };
+                                    self.status = State::Process("Encrypting...".to_string());
 
                                     match crypto::encrypt(args) {
                                         Ok(()) => self.status = State::Success,
                                         Err(e) => self.status = State::Error(e.to_string()),
                                     }
                                 }
-                                _ => {}
+                                Mode::Decrypt => {
+                                    if let Some(first_input_path) = input_paths.first(){
+                                        let args = crypto::DecryptArgs {
+                                        input_path: first_input_path.clone(),
+                                        output_path: output_path.clone(),
+                                        password: self.password.clone(),
+                                        };
+                                        
+
+                                        match crypto::decrypt(args) {
+                                            Ok(()) => self.status = State::Success,
+                                            Err(e) => self.status = State::Error(e.to_string()),
+                                        }
+                                    } else{
+                                        self.status = State::Error("No input file selected".to_string())
+                                    }
+
+
+                                }
                             }
                         }
                     }
@@ -131,6 +159,9 @@ impl eframe::App for CryptoApp {
                     }
                     State::Error(e) => {
                         ui.colored_label(egui::Color32::RED, format!("Error: {}", e));
+                    }
+                    State::Process(mes) => {
+                        ui.label(mes);
                     }
                 }
             });
