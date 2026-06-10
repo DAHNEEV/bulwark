@@ -84,6 +84,8 @@ impl TempDir {
             .with_added_extension(format!("{:x}", random_num))
             .with_added_extension("temp");
 
+        fs::create_dir_all(&temp_dir_path)?;
+
         let temp_dir = Self {
             dir_path: path,
             temp_dir_path,
@@ -94,6 +96,10 @@ impl TempDir {
     }
 
     pub fn commit(mut self) -> io::Result<()> {
+        if self.dir_path.exists() {
+            fs::remove_dir_all(&self.dir_path)?;
+        }
+        
         fs::rename(&self.temp_dir_path, &self.dir_path)?;
         self.persisted = true;
 

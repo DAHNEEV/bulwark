@@ -59,14 +59,17 @@ pub fn encrypt(args: EncryptArgs) -> Result<(), anyhow::Error> {
         let path = Path::new(path);
 
         if let Some(file_name) = path.file_name() {
-            archiver.append_path_with_name(path, file_name)?;
+            if path.is_dir(){
+                archiver.append_dir_all(file_name, path)?;
+            } else{
+                archiver.append_path_with_name(path, file_name)?;
+            }
         }
     }
-
+    archiver.finish()?;
     let encoder = archiver.into_inner()?;
     let encryptor = encoder.finish()?;
     encryptor.finish()?;
-
     temp_guard.commit()?;
 
     Ok(())

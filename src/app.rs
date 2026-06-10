@@ -114,39 +114,52 @@ impl eframe::App for CryptoApp {
                     });
                     ui.horizontal(|ui| {
                         //Src File
-                        if ui.button("Load source file").clicked() {
-                            if self.mode == Mode::Encrypt{
-                                let paths = FileDialog::new().pick_files();
+                        if self.mode == Mode::Encrypt{
+                            if ui.button("Select input files").clicked(){
+                                let paths = FileDialog::new().set_title("Select files to encrypt").pick_files();
                                 if let Some(paths) = paths {
                                     self.input_paths = Some(paths);
                                 }
-                            } else {
+                            }
+                            if ui.button("Select input folder").clicked(){
+                                let folder = FileDialog::new().pick_folder();
+                                if let Some(folder) = folder{
+                                    self.input_paths = Some(vec![folder])
+                                }
+                            }
+                        } else {
+                            if ui.button("Select input_file").clicked(){
                                 let path = FileDialog::new().pick_file();
                                 if let Some(path) = path {
                                     self.input_paths = Some(vec![path]);
                                 }
                             }
-                            
                         }
+                            
+                        
                         if let Some(paths) = &self.input_paths {
-                            ui.label(
-                                paths
-                                    .iter()
-                                    .map(|path| path.to_string_lossy())
-                                    .collect::<Vec<_>>()
-                                    .join(";"),
-                            );
+                            ui.label(format!("Selected items: {}", paths.len()));
                         } else {
-                            ui.label("No path selected");
+                            ui.label("No input selected");
                         }
                     });
+
                     ui.horizontal(|ui| {
                         //Dist File
-                        if ui.button("Create new dist file").clicked() {
-                            if let Some(path) = FileDialog::new().save_file() {
-                                self.output_path = Some(path);
+                        if self.mode == Mode::Encrypt {
+                            if ui.button("Save encrypted file as...").clicked() {
+                                if let Some(path) = FileDialog::new().save_file() {
+                                    self.output_path = Some(path);
+                                }
+                            }
+                        } else{
+                            if ui.button("Select output dictionary").clicked() {
+                                if let Some(path) = FileDialog::new().pick_folder() {
+                                    self.output_path = Some(path);
+                                }
                             }
                         }
+                    
                         if let Some(path) = &self.output_path {
                             ui.label(path.to_string_lossy());
                         } else {
