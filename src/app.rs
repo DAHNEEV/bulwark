@@ -30,6 +30,9 @@ pub struct CryptoApp {
     hide_password: bool,
     rx: Option<Receiver<Result<(), String>>>,
     status_changed_at: Option<Instant>,
+    algorithm: String,
+    compresion: bool,
+    compresion_level: i32,
 }
 
 impl Default for CryptoApp {
@@ -43,6 +46,9 @@ impl Default for CryptoApp {
             hide_password: true,
             rx: None,
             status_changed_at: None,
+            algorithm: "AES".to_string(),
+            compresion: true,
+            compresion_level: 3,
         }
     }
 }
@@ -93,6 +99,18 @@ impl eframe::App for CryptoApp {
                             egui::TextEdit::singleline(&mut self.password).password(self.hide_password),
                         );
                         ui.checkbox(&mut self.hide_password, String::new());
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Algorithm:");
+                        ui.selectable_value(&mut self.algorithm, "AES".to_string(), "AES-256 (GCM)");
+                        ui.selectable_value(&mut self.algorithm, "ChaCha".to_string(), "ChaCha20-Poly1305");
+                    });
+                    ui.checkbox(&mut self.compresion, "Enable compression");
+                    ui.add_enabled_ui(self.compresion, |ui|{
+                        ui.horizontal(|ui|{
+                            ui.label("Compression level:");
+                            ui.add(egui::Slider::new(&mut self.compresion_level, 1..=12).text("level"));
+                        })
                     });
                     ui.horizontal(|ui| {
                         //Src File
