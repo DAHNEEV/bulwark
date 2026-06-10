@@ -83,6 +83,7 @@ impl eframe::App for CryptoApp {
 
         egui::TopBottomPanel::top("mode_swicher").show(ctx, |ui| {
             ui.horizontal(|ui| {
+                //Mode
                 ui.label("Mode:");
                 ui.selectable_value(&mut self.mode, Mode::Encrypt, "Encrypt");
                 ui.selectable_value(&mut self.mode, Mode::Decrypt, "Decrypt");
@@ -102,6 +103,7 @@ impl eframe::App for CryptoApp {
                         ui.checkbox(&mut self.hide_password, String::new());
                     });
                     ui.horizontal(|ui| {
+                        //Algorithm
                         ui.label("Algorithm:");
                         ui.selectable_value(
                             &mut self.algorithm,
@@ -114,8 +116,9 @@ impl eframe::App for CryptoApp {
                             "XChaCha20-Poly1305",
                         );
                     });
+                    //Compresion
                     ui.checkbox(&mut self.compresion, "Enable compression");
-                    ui.add_enabled_ui(self.compresion, |ui| {
+                    ui.add_enabled_ui(self.compresion && self.mode == Mode::Encrypt, |ui| {
                         ui.horizontal(|ui| {
                             ui.label("Compression level:");
                             ui.add(
@@ -141,7 +144,7 @@ impl eframe::App for CryptoApp {
                                 }
                             }
                         } else {
-                            if ui.button("Select input_file").clicked() {
+                            if ui.button("Select input file").clicked() {
                                 let path = FileDialog::new().pick_file();
                                 if let Some(path) = path {
                                     self.input_paths = Some(vec![path]);
