@@ -4,14 +4,29 @@ use std::{
 };
 
 use aes_gcm::{
+    Aes256Gcm,
     aead::{Aead, generic_array::GenericArray},
     aes::cipher::ArrayLength,
 };
-use chacha20poly1305::consts::U5;
+use chacha20poly1305::{XChaCha20Poly1305, consts::U5};
 
 use crate::crypto::parallel_stream;
 
-pub struct Decryptor<R, A>
+pub enum Decryptor<R: Read> {
+    Aes256Gcm(GenericDecryptor<R, Aes256Gcm>),
+    XChaCha20Poly1305(GenericDecryptor<R, XChaCha20Poly1305>),
+}
+
+impl<R: Read> Read for Decryptor<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            Self::Aes256Gcm(d) => d.read(buf),
+            Self::XChaCha20Poly1305(d) => d.read(buf),
+        }
+    }
+}
+
+pub struct GenericDecryptor<R, A>
 where
     R: Read,
     A: Aead + Sync,
@@ -26,7 +41,7 @@ where
     buffer_size: usize,
 }
 
-impl<R, A> Decryptor<R, A>
+impl<R, A> GenericDecryptor<R, A>
 where
     R: Read,
     A: Aead + Sync,
@@ -70,7 +85,7 @@ where
     }
 }
 
-impl<R, A> Read for Decryptor<R, A>
+impl<R, A> Read for GenericDecryptor<R, A>
 where
     R: Read,
     A: Aead + Sync,
