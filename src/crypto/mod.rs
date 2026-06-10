@@ -7,6 +7,7 @@ use std::{
 use aes_gcm::Aes256Gcm;
 use chacha20poly1305::{KeyInit, XChaCha20Poly1305};
 
+mod codec;
 mod decryptor;
 mod encryptor;
 mod parallel_stream;
@@ -23,7 +24,7 @@ pub struct EncryptArgs {
     pub output_path: PathBuf,
     pub password: String,
     pub algorithm: Algorithm,
-    pub compression: bool, // todo!
+    pub compression: bool,
     pub compression_level: i32,
 }
 
@@ -55,7 +56,7 @@ pub fn encrypt(args: EncryptArgs) -> Result<(), anyhow::Error> {
 
     let key = utils::hash_password(&args.password, salt)?;
 
-    let encryptor = match &args.algorithm {
+    let encryptor = match args.algorithm {
         Algorithm::Aes256Gcm => {
             let nonce: [u8; 7] = utils::generate_random_bytes()?;
 
@@ -85,9 +86,14 @@ pub fn encrypt(args: EncryptArgs) -> Result<(), anyhow::Error> {
             ))
         }
     };
-
-    let mut encoder = zstd::Encoder::new(encryptor, args.compression_level)?;
-    encoder.multithread(3)?;
+    let encoder = match args.compression {
+        true => {
+            let mut zstd = zstd::Encoder::new(encryptor, args.compression_level)?;
+            zstd.multithread(3)?;
+            codec::Encoder::Zstd(zstd)
+        }
+        false => codec::Encoder::None(encryptor),
+    };
     let mut archiver = tar::Builder::new(encoder);
 
     for path in &args.input_paths {
@@ -116,6 +122,7 @@ pub struct DecryptArgs {
     pub output_path: PathBuf,
     pub password: String,
     pub algorithm: Algorithm,
+    pub compression: bool,
 }
 
 /// The main function responsible for decrypting the file.
@@ -166,7 +173,10 @@ pub fn decrypt(args: DecryptArgs) -> Result<(), anyhow::Error> {
             ))
         }
     };
-    let decoder = zstd::Decoder::new(decryptor)?;
+    let decoder = match args.compression {
+        true => codec::Decoder::Zstd(zstd::Decoder::new(decryptor)?),
+        false => codec::Decoder::None(decryptor),
+    };
     let mut dearchiver = tar::Archive::new(decoder);
 
     let temp_dir = utils::TempDir::create(args.output_path)?;

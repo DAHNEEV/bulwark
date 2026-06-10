@@ -119,7 +119,7 @@ impl eframe::App for CryptoApp {
                         ui.horizontal(|ui| {
                             ui.label("Compression level:");
                             ui.add(
-                                egui::Slider::new(&mut self.compresion_level, 1..=12).text("level"),
+                                egui::Slider::new(&mut self.compresion_level, 1..=22).text("level"),
                             );
                         })
                     });
@@ -222,6 +222,7 @@ impl eframe::App for CryptoApp {
                                                 output_path: output_path.clone(),
                                                 password: self.password.clone(),
                                                 algorithm: self.algorithm.clone(),
+                                                compression: self.compresion,
                                             };
 
                                             std::thread::spawn(move || {

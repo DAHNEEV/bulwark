@@ -51,6 +51,9 @@ struct CliDecryptArgs {
 
     #[arg(short, long, value_parser = parse_algorithm)]
     algorithm: Algorithm,
+
+    #[arg(short, long)]
+    compression: bool,
 }
 
 fn parse_algorithm(s: &str) -> Result<Algorithm, String> {
@@ -84,6 +87,7 @@ fn main() -> Result<(), anyhow::Error> {
                 output_path: args.output_path,
                 password: args.password,
                 algorithm: args.algorithm,
+                compression: args.compression,
             };
             let t0 = Instant::now();
             crypto::decrypt(options).unwrap();
