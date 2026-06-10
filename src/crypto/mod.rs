@@ -22,6 +22,15 @@ pub struct EncryptArgs {
     pub input_paths: Vec<PathBuf>,
     pub output_path: PathBuf,
     pub password: String,
+    pub algorithm: Algorithm,
+    pub compression: bool, // todo!
+    pub compression_level: i32,
+}
+
+#[derive(Clone, PartialEq)]
+pub enum Algorithm {
+    Aes256Gcm,
+    XChaCha20Poly1305,
 }
 
 /// The main function responsible for encrypting the file.
@@ -41,17 +50,43 @@ pub fn encrypt(args: EncryptArgs) -> Result<(), anyhow::Error> {
     let mut buffered_output = BufWriter::with_capacity(1024 * 1024, temp_file);
 
     let salt: [u8; 16] = utils::generate_random_bytes()?;
-    let nonce = utils::generate_random_bytes()?;
 
     buffered_output.write_all(&salt)?;
-    buffered_output.write_all(&nonce)?;
 
     let key = utils::hash_password(&args.password, salt)?;
-    let aead = XChaCha20Poly1305::new(&key.into());
-    // let aead = Aes256Gcm::new(&key.into());
 
-    let encryptor = encryptor::Encryptor::new(buffered_output, aead, nonce.into(), 1024 * 1024, 4);
-    let mut encoder = zstd::Encoder::new(encryptor, 4)?;
+    let encryptor = match &args.algorithm {
+        Algorithm::Aes256Gcm => {
+            let nonce: [u8; 7] = utils::generate_random_bytes()?;
+
+            buffered_output.write_all(&nonce)?;
+
+            let aead = Aes256Gcm::new(&key.into());
+            encryptor::Encryptor::Aes256Gcm(encryptor::GenericEncryptor::new(
+                buffered_output,
+                aead,
+                nonce.into(),
+                1024 * 1024,
+                4,
+            ))
+        }
+        Algorithm::XChaCha20Poly1305 => {
+            let nonce: [u8; 19] = utils::generate_random_bytes()?;
+
+            buffered_output.write_all(&nonce)?;
+
+            let aead = XChaCha20Poly1305::new(&key.into());
+            encryptor::Encryptor::XChaCha20Poly1305(encryptor::GenericEncryptor::new(
+                buffered_output,
+                aead,
+                nonce.into(),
+                1024 * 1024,
+                4,
+            ))
+        }
+    };
+
+    let mut encoder = zstd::Encoder::new(encryptor, args.compression_level)?;
     encoder.multithread(3)?;
     let mut archiver = tar::Builder::new(encoder);
 
@@ -80,6 +115,7 @@ pub struct DecryptArgs {
     pub input_path: PathBuf,
     pub output_path: PathBuf,
     pub password: String,
+    pub algorithm: Algorithm,
 }
 
 /// The main function responsible for decrypting the file.
@@ -99,14 +135,37 @@ pub fn decrypt(args: DecryptArgs) -> Result<(), anyhow::Error> {
 
     let mut salt = [0u8; 16];
     buffered_input.read_exact(&mut salt)?;
-    let mut nonce = [0u8; 19];
-    buffered_input.read_exact(&mut nonce)?;
 
     let key = utils::hash_password(&args.password, salt)?;
-    let aead = XChaCha20Poly1305::new(&key.into());
 
-    let decryptor =
-        decryptor::Decryptor::new(buffered_input, aead, nonce.into(), 1024 * 1024 + 16, 4);
+    let decryptor = match &args.algorithm {
+        Algorithm::Aes256Gcm => {
+            let mut nonce = [0u8; 7];
+            buffered_input.read_exact(&mut nonce)?;
+
+            let aead = Aes256Gcm::new(&key.into());
+            decryptor::Decryptor::Aes256Gcm(decryptor::GenericDecryptor::new(
+                buffered_input,
+                aead,
+                nonce.into(),
+                1024 * 1024 + 16,
+                4,
+            ))
+        }
+        Algorithm::XChaCha20Poly1305 => {
+            let mut nonce = [0u8; 19];
+            buffered_input.read_exact(&mut nonce)?;
+
+            let aead = XChaCha20Poly1305::new(&key.into());
+            decryptor::Decryptor::XChaCha20Poly1305(decryptor::GenericDecryptor::new(
+                buffered_input,
+                aead,
+                nonce.into(),
+                1024 * 1024 + 16,
+                4,
+            ))
+        }
+    };
     let decoder = zstd::Decoder::new(decryptor)?;
     let mut dearchiver = tar::Archive::new(decoder);
 

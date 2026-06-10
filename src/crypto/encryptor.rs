@@ -3,7 +3,9 @@ use std::{
     ops::Sub,
 };
 
+use aes_gcm::Aes256Gcm;
 use chacha20poly1305::{
+    XChaCha20Poly1305,
     aead::{
         Aead,
         generic_array::{ArrayLength, GenericArray},
@@ -13,7 +15,37 @@ use chacha20poly1305::{
 
 use crate::crypto::parallel_stream;
 
-pub struct Encryptor<W, A>
+pub enum Encryptor<W: Write> {
+    Aes256Gcm(GenericEncryptor<W, Aes256Gcm>),
+    XChaCha20Poly1305(GenericEncryptor<W, XChaCha20Poly1305>),
+}
+
+impl<W: Write> Write for Encryptor<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self {
+            Self::Aes256Gcm(e) => e.write(buf),
+            Self::XChaCha20Poly1305(e) => e.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match self {
+            Self::Aes256Gcm(e) => e.flush(),
+            Self::XChaCha20Poly1305(e) => e.flush(),
+        }
+    }
+}
+
+impl<W: Write> Encryptor<W> {
+    pub fn finish(self) -> io::Result<W> {
+        match self {
+            Self::Aes256Gcm(e) => e.finish(),
+            Self::XChaCha20Poly1305(e) => e.finish(),
+        }
+    }
+}
+
+pub struct GenericEncryptor<W, A>
 where
     W: Write,
     A: Aead + Sync,
@@ -26,7 +58,7 @@ where
     buffer_size: usize,
 }
 
-impl<W, A> Encryptor<W, A>
+impl<W, A> GenericEncryptor<W, A>
 where
     W: Write,
     A: Aead + Sync,
@@ -62,7 +94,7 @@ where
     }
 }
 
-impl<W, A> Write for Encryptor<W, A>
+impl<W, A> Write for GenericEncryptor<W, A>
 where
     W: Write,
     A: Aead + Sync,
