@@ -99,7 +99,7 @@ impl TempDir {
         if self.dir_path.exists() {
             fs::remove_dir_all(&self.dir_path)?;
         }
-        
+
         fs::rename(&self.temp_dir_path, &self.dir_path)?;
         self.persisted = true;
 
