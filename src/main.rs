@@ -2,6 +2,8 @@ use app::CryptoApp;
 use clap::{Args, Parser, Subcommand};
 use std::{path::PathBuf, time::Instant};
 
+use crate::crypto::Algorithm;
+
 mod app;
 mod crypto;
 
@@ -28,6 +30,12 @@ struct CliEncryptArgs {
 
     #[arg(short, long)]
     output_path: PathBuf,
+
+    #[arg(short, long, value_parser = parse_algorithm)]
+    algorithm: Algorithm,
+
+    #[arg(short, long)]
+    compression_level: Option<i32>,
 }
 
 #[derive(Args)]
@@ -40,6 +48,17 @@ struct CliDecryptArgs {
 
     #[arg(short, long)]
     output_path: PathBuf,
+
+    #[arg(short, long, value_parser = parse_algorithm)]
+    algorithm: Algorithm,
+}
+
+fn parse_algorithm(s: &str) -> Result<Algorithm, String> {
+    match s.to_lowercase().as_str() {
+        "aes" => Ok(Algorithm::Aes256Gcm),
+        "cha" => Ok(Algorithm::XChaCha20Poly1305),
+        _ => Err("Please choose \"cha\" (XChaCha20-Poly1305) or \"aes\" (AES-256-GCM)".to_string()),
+    }
 }
 
 fn main() -> Result<(), anyhow::Error> {
@@ -51,6 +70,9 @@ fn main() -> Result<(), anyhow::Error> {
                 input_paths: args.input_paths,
                 output_path: args.output_path,
                 password: args.password,
+                algorithm: args.algorithm,
+                compression: args.compression_level.is_some(),
+                compression_level: args.compression_level.unwrap_or(0),
             };
             let t0 = Instant::now();
             crypto::encrypt(options).unwrap();
@@ -61,6 +83,7 @@ fn main() -> Result<(), anyhow::Error> {
                 input_path: args.input_path,
                 output_path: args.output_path,
                 password: args.password,
+                algorithm: args.algorithm,
             };
             let t0 = Instant::now();
             crypto::decrypt(options).unwrap();

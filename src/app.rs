@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 use std::time::Instant;
 
-use crate::crypto;
+use crate::crypto::{self, Algorithm};
 
 #[derive(Default, PartialEq, Debug)]
 enum Mode {
@@ -30,7 +30,7 @@ pub struct CryptoApp {
     hide_password: bool,
     rx: Option<Receiver<Result<(), String>>>,
     status_changed_at: Option<Instant>,
-    algorithm: String,
+    algorithm: Algorithm,
     compresion: bool,
     compresion_level: i32,
 }
@@ -46,7 +46,7 @@ impl Default for CryptoApp {
             hide_password: true,
             rx: None,
             status_changed_at: None,
-            algorithm: "AES".to_string(),
+            algorithm: Algorithm::XChaCha20Poly1305,
             compresion: true,
             compresion_level: 3,
         }
@@ -84,8 +84,8 @@ impl eframe::App for CryptoApp {
         egui::TopBottomPanel::top("mode_swicher").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Mode:");
+                ui.selectable_value(&mut self.mode, Mode::Encrypt, "Encrypt");
                 ui.selectable_value(&mut self.mode, Mode::Decrypt, "Decrypt");
-                ui.selectable_value(&mut self.mode, Mode::Encrypt, "Encrypt")
             });
         });
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -105,13 +105,13 @@ impl eframe::App for CryptoApp {
                         ui.label("Algorithm:");
                         ui.selectable_value(
                             &mut self.algorithm,
-                            "AES".to_string(),
-                            "AES-256 (GCM)",
+                            Algorithm::Aes256Gcm,
+                            "AES-256-GCM",
                         );
                         ui.selectable_value(
                             &mut self.algorithm,
-                            "ChaCha".to_string(),
-                            "ChaCha20-Poly1305",
+                            Algorithm::XChaCha20Poly1305,
+                            "XChaCha20-Poly1305",
                         );
                     });
                     ui.checkbox(&mut self.compresion, "Enable compression");
@@ -199,6 +199,9 @@ impl eframe::App for CryptoApp {
                                             input_paths: input_paths.clone(),
                                             output_path: output_path.clone(),
                                             password: self.password.clone(),
+                                            algorithm: self.algorithm.clone(),
+                                            compression: self.compresion,
+                                            compression_level: self.compresion_level,
                                         };
 
                                         std::thread::spawn(move || {
@@ -218,6 +221,7 @@ impl eframe::App for CryptoApp {
                                                 input_path: first_input_path.clone(),
                                                 output_path: output_path.clone(),
                                                 password: self.password.clone(),
+                                                algorithm: self.algorithm.clone(),
                                             };
 
                                             std::thread::spawn(move || {
